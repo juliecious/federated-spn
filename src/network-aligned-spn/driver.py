@@ -437,7 +437,7 @@ class EinsumServer:
         for c in range(args.num_clients):
             logging.info(f'Train node {c}')
             gpu_idx = c % len(args.gpus)
-            node = EinetNode.remote(args.dataset, num_classes=10, device=gpu_idx)
+            node = EinetNode.remote(args.dataset, num_classes=10, device=gpu_idx, num_epochs=args.num_epochs)
             nodes.append(node)
             if args.setting == 'horizontal':
                 train_subset = train_data[c]
@@ -736,13 +736,16 @@ def main_einsum(args):
         nodes = server.train(train_data, feature_spaces, args)
     elif args.setting == 'hybrid':
         sample_frac = None if args.sample_frac == -1 else args.sample_frac
-        train_data, feature_spaces = get_hybrid_train_data(args.ds, args.num_clients, args.min_dim_frac, args.max_dim_frac, sample_frac)
+        train_data, feature_spaces = get_hybrid_train_data(args.dataset, args.num_clients, args.min_dim_frac, args.max_dim_frac, sample_frac)
         train_data = make_data_loader(train_data, args.batch_size)
         nodes = server.train(train_data, feature_spaces, args)
 
+    print("Done locale training")
+
     grouped_feature_spaces = utils.group_clients_by_subspace(feature_spaces)
     spn, client_spns = server.build_spn(grouped_feature_spaces, nodes, server_device)
-
+    print("Done training")
+    print("Evaluate")
     # get accuracy
     test_data = get_test_data(args.dataset, args.ignore_targets)
     test_data = make_data_loader(test_data, args.batch_size)
@@ -812,6 +815,7 @@ parser.add_argument('--model', default='spflow')
 parser.add_argument('--cluster-by-label', default=0, type=int)
 parser.add_argument('--ignore-targets', action='store_true')
 parser.add_argument('--gpus', action='store', type=int, nargs='+')
+parser.add_argument('--num-epochs', default=10)
 
 args = parser.parse_args()
 

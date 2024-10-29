@@ -56,6 +56,7 @@ def init_spn(device, num_vars, num_dims):
     einet = EinsumNetwork.EinsumNetwork(graph, args)
     einet.initialize()
     einet.to(device)
+    print(sum([p.numel() for p in einet.parameters()]))
     return einet
 
 def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imagenet'):
@@ -129,7 +130,7 @@ def train_mixture(clusters, dataset='imagenet'):
             img_ids = np.argwhere(clusters == rc).flatten()
 
             print(f"Cluster-size={len(img_ids)}")
-            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints/imagenet/v2/checkpoints_ceinet_16clusters_small/', rc, dataset))
+            p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints/celeba/v2/checkpoints_ceinet_16clusters_large/', rc, dataset))
             p.start()
             processes.append(p)
     
@@ -137,15 +138,16 @@ def train_mixture(clusters, dataset='imagenet'):
             p.join()
         rt.step()
 
-clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch_16.npy')
+#clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch_16.npy')
+clusters = np.load('/storage-01/ml-jseng/celeba-clusters/vit_clusters_16.npy')
 print(len(clusters))
 # encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
 # train einets in parallel. Start num_slices processes in parallel, wait
 # until they finished and start next batch
 if __name__ == '__main__':
-    torch.manual_seed(0)
-    np.random.seed(0)
-    train_mixture(clusters, 'imagenet')
+    torch.manual_seed(1)
+    np.random.seed(1)
+    train_mixture(clusters, 'celeba')
 
 
 #weights = np.array(cluster_sizes) / np.sum(cluster_sizes)

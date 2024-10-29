@@ -53,7 +53,7 @@ def get_horizontal_train_data(ds, num_clients, partitioning='iid', dir_alpha=0.2
                                torchvision.transforms.Normalize(
                                  (0.1307,), (0.3081,)),
                              ])
-        dataset = MNIST('../../datasets/avazu/', True, transform=transform, download=True)
+        dataset = MNIST('../../datasets/', True, transform=transform, download=True)
         partitioner = MNISTPartitioner(dataset.targets, num_clients, 
                                        partition=partitioning, dir_alpha=dir_alpha)
         imgs = dataset.data.reshape((-1, 28*28)).numpy().astype(np.float64)

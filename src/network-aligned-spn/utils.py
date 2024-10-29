@@ -201,7 +201,7 @@ def group_clients_by_subspace(subspaces):
     for i, space in enumerate(subspaces):
         idx = []
         for j, s in enumerate(subspaces):
-            if space == s:
+            if list(space) == list(s):
                 idx.append(j)
         if len(idx) == 0:
             # no match was found

@@ -24,6 +24,10 @@ import normflows as nf
 import torchvision as tv
 from torchvision.transforms.functional import crop
 from det.tree import DensityTree
+import time
+import warnings
+
+warnings.filterwarnings('ignore')
 
 n_gpus = 0.25 if torch.cuda.is_available() else 0
 @ray.remote(num_gpus=n_gpus)
@@ -46,14 +50,18 @@ class EinetNode:
             Train SPN on local data
             Training loop to train the SPN. Follows SGD.
         """
+        start = time.time()
         if self.train_algo == 'em':
             self._train_em()
         elif self.train_algo == 'sgd':
             self._train_sgd()
+        end = time.time()
+        elapsed = end - start
+        print(f"Done training after {elapsed:.4f} seconds!") 
 
     def _train_sgd(self):
         self.config = EinetConfig(len(self.subspaces[0][0]), num_classes=self.num_classes, 
-                                    leaf_type=RatNormal, leaf_kwargs={}, depth=4, num_leaves=20,
+                                    leaf_type=RatNormal, leaf_kwargs={}, depth=2, num_leaves=20,
                                     num_sums=20, num_repetitions=10)
         for subspace, train_loader in self.subspaces:
             einet = Einet(self.config).to(self.device)
@@ -89,11 +97,11 @@ class EinetNode:
                     'min_var': 1e-6,
                     'max_var': 1.
                 },
-                online_em_frequency=5,
+                online_em_frequency=50,
                 online_em_stepsize=0.1
             )
         for subspace, train_loader in self.subspaces:
-            graph = random_binary_trees(len(subspace), 4, 10)
+            graph = random_binary_trees(len(subspace), 2, 10)
             einet = EinsumNetwork(graph, self.config)
             einet.config = self.config # make compatible with FC framework
             einet.initialize()
@@ -334,11 +342,15 @@ class FlowNode:
         self.spns = {}
 
     def train(self):
+        start = time.time()
         for subspace, train_data in self.subspaces:
             if self.spn_structure == 'learned':
                 self._train_learned(subspace, train_data)
             elif self.spn_structure == 'rat':
                 self._train_rat(subspace, train_data)
+        end = time.time()
+        elapsed = end - start
+        print(f"Done learning after {elapsed:.4f} seconds!")
 
     def _train_learned(self, subspace, train_data):
         if self.cluster_by_label == 1:

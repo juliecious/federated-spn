@@ -21,24 +21,24 @@ classes = [7]
 # classes = [2, 3, 5, 7]
 # classes = None
 
-K = 40
+K = 120
 
-#structure = 'poon-domingos'
-structure = 'binary-trees'
+structure = 'poon-domingos'
+#structure = 'binary-trees'
 
 # 'poon-domingos'
 pd_num_pieces = [4]
 #pd_num_pieces = [8]
 #pd_num_pieces = [5, 5]
-width = 112
-height = 112
+width = 64
+height = 64
 num_vars = width*height
 num_dims = 3
 patch_size = (height, width)
 
 # 'binary-trees'
 depth = 2
-num_repetitions = 4
+num_repetitions = 6
 
 num_epochs = 10
 batch_size = 64
@@ -56,5 +56,5 @@ reuse_trained = False
 port = '12005'
 
 # Devices
-devices = [0, 2, 3, 4, 5, 7]
+devices = [1, 4, 5, 6]
 num_processes = 4

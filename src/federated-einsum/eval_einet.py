@@ -19,7 +19,7 @@ def eval_einsum(model_dir, model_id, dataset, device_id):
     elif dataset == 'celeba':
         transform = Compose([ToTensor(), Resize(64, antialias=True), CenterCrop(64)])
         ds = CelebA('/storage-01/datasets/', transform=transform, split='test')
-    loader = DataLoader(ds, 16, num_workers=2)
+    loader = DataLoader(ds, 32, num_workers=2)
     model_file = f'chk_{model_id}.pt'
     device = torch.device(f'cuda:{device_id}')
     einet = torch.load(model_dir + model_file).to(device)

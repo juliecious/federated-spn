@@ -31,14 +31,16 @@ def train(ds_name, num_epochs):
     rt.start()
     device = torch.device(f'cuda:{0}')
     dataset, shape = load_dataset(ds_name)
-    loader = DataLoader(dataset, batch_size=batch_size, num_workers=2)
-    arch = RAT_SPN(np.prod(list(shape)), 256, 2, 6, input_node_type=juice_dists.Gaussian, input_node_params={'mu': 0.0, 'sigma': 1.0, 'min_sigma': 1e-6})
-    #arch = PD(shape, 256, input_dist=juice_dists.Gaussian(0.0, 0.1, 1e-6), split_points=[[64//4], [64//4], [1]])
+    loader = DataLoader(dataset, batch_size=batch_size, num_workers=0)
+    #arch = RAT_SPN(np.prod(list(shape)), 256, 2, 6, input_node_type=juice_dists.Gaussian, input_node_params={'mu': 0.0, 'sigma': 1.0, 'min_sigma': 1e-6})
+    arch = PD(shape, 256, input_dist=juice_dists.Gaussian(0.0, 0.1, 1e-6), split_points=[[2], [2], [1]])
     print(arch)
     model = juice.compile(arch)
     model = model.to(device)
 
     for e in range(num_epochs):
+
+        total_ll = 0.0
 
         for i, (x, y) in enumerate(loader):
             x = x.to(device)
@@ -50,30 +52,36 @@ def train(ds_name, num_epochs):
             lls = model(x)
             # Backward pass
             lls.mean().backward()
+            total_ll += lls.mean().detach().cpu()
             # Mini-batch EM
-            model.mini_batch_em(step_size = 0.01, pseudocount = 0.001)
+            model.mini_batch_em(step_size = 0.25, pseudocount = 0.00001)
 
             if i % 50 == 0:
                 print(f"Epoch {e}/{num_epochs}: \t Iter: {i}/{len(loader)}: \t LL: {lls.mean()}")
+        
+        print(f"Epoch {e}/{num_epochs} \t LL: {total_ll / (len(loader) * batch_size)}")
     
-    return model
+    return model, device
 
 
-def evaluate(model, dataset):
+def evaluate(model, dataset, device):
 
-    loader = DataLoader(dataset, batch_size=256, num_workers=2)
+    loader = DataLoader(dataset, batch_size=256, num_workers=0)
 
     avg_lls = []
 
     for x, y in loader:
-
+        x = x.reshape(x.shape[0], -1)
+        x = x.to(device)
+        
         lls = model(x)
-        avg_lls.append(lls.detach().cpu().mean().numpy())
+        avg_lls.append(lls.detach().cpu().numpy())
 
-    return np.sum(avg_lls) / len(loader)
+    lls = np.concatenate(avg_lls)
+    return np.mean(lls)
 
 
-model = train('celeba', 10)
-test_set = load_dataset('celeba', 'test')
-result = evaluate(model, test_set)
+model, device = train('imagenet32', 1)
+test_set, _ = load_dataset('imagenet32', 'val')
+result = evaluate(model, test_set, device)
 print(result)
