@@ -98,8 +98,8 @@ def cluster_encodings(args):
 
     elif args.clustering == 'torch-kmeans':
         encodings = torch.from_numpy(encodings)
-        idx = torch.randint(low=0, high=len(encodings), size=(int(0.1*len(encodings)),))
-        encodings = encodings[idx]
+        #idx = torch.randint(low=0, high=len(encodings), size=(int(0.1*len(encodings)),))
+        #encodings = encodings[idx]
         cluster_ids, cluster_centers = kmeans(X=encodings, num_clusters=args.num_clusters,
                                                 device=torch.device(f'cuda:{args.gpu}'))
         clusters = cluster_ids.cpu().numpy()

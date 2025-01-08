@@ -27,7 +27,7 @@ class Args(object):
                  num_classes=1,
                  exponential_family=NormalArray,
                  exponential_family_args=None,
-                 use_em=True,
+                 use_em=False,
                  online_em_frequency=1,
                  online_em_stepsize=0.05):
         self.num_var = num_var

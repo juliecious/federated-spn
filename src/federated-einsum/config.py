@@ -5,9 +5,9 @@ if conditional:
 else:
     from einsum import EinsumNetwork
 
-#exponential_family = EinsumNetwork.BinomialArray
+exponential_family = EinsumNetwork.BinomialArray
 #exponential_family = EinsumNetwork.CategoricalArray
-exponential_family = EinsumNetwork.NormalArray
+#exponential_family = EinsumNetwork.NormalArray
 
 exponential_family_args = None
 if exponential_family == EinsumNetwork.BinomialArray:
@@ -30,20 +30,20 @@ structure = 'poon-domingos'
 pd_num_pieces = [4]
 #pd_num_pieces = [8]
 #pd_num_pieces = [5, 5]
-width = 64
-height = 64
+width = 16
+height = 16
 num_vars = width*height
 num_dims = 3
 patch_size = (height, width)
 
 # 'binary-trees'
-depth = 2
+depth = 3
 num_repetitions = 6
 
 num_epochs = 10
-batch_size = 64
-online_em_frequency = 20
-online_em_stepsize = 0.25
+batch_size = 256
+online_em_frequency = 5
+online_em_stepsize = 0.5
 num_clients = 1
 
 checkpoint_freq = 2
@@ -56,5 +56,5 @@ reuse_trained = False
 port = '12005'
 
 # Devices
-devices = [1, 4, 5, 6]
+devices = [2, 3]
 num_processes = 4

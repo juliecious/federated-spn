@@ -6,4 +6,4 @@ models/
 samples/
 checkpoints/
 precomputed/
-checkpoints*
+datasets/

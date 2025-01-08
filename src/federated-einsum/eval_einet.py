@@ -19,7 +19,7 @@ def eval_einsum(model_dir, model_id, dataset, device_id):
     elif dataset == 'celeba':
         transform = Compose([ToTensor(), Resize(64, antialias=True), CenterCrop(64)])
         ds = CelebA('/storage-01/datasets/', transform=transform, split='test')
-    loader = DataLoader(ds, 32, num_workers=2)
+    loader = DataLoader(ds, 32, num_workers=2, shuffle=False)
     model_file = f'chk_{model_id}.pt'
     device = torch.device(f'cuda:{device_id}')
     einet = torch.load(model_dir + model_file).to(device)
@@ -33,7 +33,6 @@ def eval_einsum(model_dir, model_id, dataset, device_id):
         ll_sample = einet.forward(x)
         einet_lls.append(ll_sample.detach().cpu().numpy().flatten())
     return np.concatenate(einet_lls)
-    
     #samples = einet.sample(9).reshape(-1, config.height, config.width, 3)
     #save_image_stack(samples.cpu(), 3, 3, os.path.join(sample_dir, 'samples.png'))
 
@@ -58,6 +57,7 @@ if __name__ == '__main__':
     weights = []
     for i in range(len(model_files)):
         einet_lls = eval_einsum(args.model_dir, i, args.dataset, args.device)
+        print(einet_lls.mean())
         if args.cluster_file is not None:
             w = len(clusters[clusters == i]) / len(clusters)
             weighted_lls = einet_lls - np.log(w)
@@ -68,7 +68,8 @@ if __name__ == '__main__':
     if args.cluster_file is not None:
         print(np.array(lls).shape)
         lls = torch.from_numpy(np.array(lls).T)
-        lls = torch.logsumexp(lls, dim=1)
+        lls = torch.logsumexp(lls, dim=1) 
+        torch.save(lls, './lls_im')
         print(lls.shape)
         print(lls.mean())
     else:
