@@ -1,5 +1,5 @@
 import numpy as np
-from torchvision.datasets import ImageNet, SVHN, CelebA
+from torchvision.datasets import ImageNet, SVHN, CelebA, MNIST
 from torchvision.transforms import Compose, CenterCrop, Resize, ToTensor
 from torch.utils.data import Subset, DataLoader
 from einsum import EinsumNetwork, Graph, EinetMixture
@@ -8,7 +8,7 @@ import torch
 import os
 import logging
 import sys
-from utils import save_image_stack
+from utils import rgb_to_ycocg
 from sklearn.cluster import KMeans
 from multiprocessing import Process
 import pickle
@@ -20,7 +20,7 @@ log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
 format=log_format, datefmt='%m/%d %I:%M:%S %p')
 
-def init_spn(device, num_vars, num_dims, num_classes=1):
+def init_spn(device, num_vars, num_dims, use_em=True, num_classes=1):
     """
         Build a SPN (implemented as an einsum network). The structure is either
         the same as proposed in https://arxiv.org/pdf/1202.3732.pdf (referred to as
@@ -52,7 +52,7 @@ def init_spn(device, num_vars, num_dims, num_classes=1):
             exponential_family_args=config.exponential_family_args,
             online_em_frequency=config.online_em_frequency,
             online_em_stepsize=config.online_em_stepsize,
-            use_em=True)
+            use_em=use_em)
 
     einet = EinsumNetwork.EinsumNetwork(graph, args)
     einet.initialize()
@@ -177,9 +177,9 @@ def train(num_epochs, device_id, chk_path, cluster_count, dataset='imagenet'):
         transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
         dataset = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
     elif dataset == 'celeba':
-        num_vars = 16*16
+        num_vars = 32*32
         num_dims = 3
-        transform = Compose([ToTensor(), Resize(16, antialias=True), CenterCrop(16)])
+        transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
         dataset = CelebA('/storage-01/datasets/', transform=transform)
     loader = DataLoader(dataset, batch_size=config.batch_size, num_workers=2)
     einet = init_spn(device, num_vars, num_dims)
@@ -190,6 +190,8 @@ def train(num_epochs, device_id, chk_path, cluster_count, dataset='imagenet'):
         for i, (x, y) in enumerate(loader):
             x = x.to(device)
             x = x.permute((0, 2, 3, 1))
+            x = rgb_to_ycocg(x)
+            x = x * 255
             x = x.reshape(x.shape[0], num_vars, num_dims)
             ll_sample = einet.forward(x)
             #ll_sample = EinsumNetwork.log_likelihoods(outputs)
@@ -200,6 +202,7 @@ def train(num_epochs, device_id, chk_path, cluster_count, dataset='imagenet'):
             total_ll += log_likelihood.detach().item() / (len(loader) * loader.batch_size)
 
             if i % 20 == 0:
+                print(ll_sample.flatten())
                 logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
         #total_ll = total_ll / (len(loader) * loader.batch_size)
         log_likelihoods.append(total_ll)
@@ -208,14 +211,107 @@ def train(num_epochs, device_id, chk_path, cluster_count, dataset='imagenet'):
         einet.em_update()
         rt.step()
     torch.save(einet, os.path.join(chk_path, f'chk_{cluster_count}.pt'))
-    df = pd.DataFrame(data=log_likelihoods, columns=['lls'])
-    df.to_csv(os.path.join(chk_path, f'chk_{cluster_count}.csv'))
     return einet
+
+def train_sgd(num_epochs, device_id, chk_path, cluster_count, dataset='imagenet'):
+
+    """
+    Training loop to train the SPN. Follows EM-procedure.
+    """
+    if not os.path.exists(chk_path):
+        path = Path(chk_path)
+        path.mkdir(parents=True)
+    rt = RTPT('JS', 'FedEinsum', num_epochs)
+    rt.start()
+    logging.info('Starting Training...')
+    log_likelihoods = []
+    num_vars = config.num_vars
+    num_dims = config.num_dims
+    device = torch.device(f'cuda:{device_id}')
+    if dataset == 'imagenet':
+        transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
+        dataset = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
+    elif dataset == 'imagenet32':
+        transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
+        dataset = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
+    elif dataset == 'celeba':
+        transform = Compose([ToTensor(), Resize((config.height, config.width))])
+        dataset = CelebA('/storage-01/datasets/', transform=transform)
+    elif dataset == 'mnist':
+        dataset = MNIST('/storage-01/datasets/', train=True, transform=ToTensor())
+    loader = DataLoader(dataset, batch_size=config.batch_size, num_workers=2)
+    einet = init_spn(device, num_vars, num_dims, use_em=False)
+    optimizer = torch.optim.Adam(einet.parameters(), 0.1)
+    for epoch_count in range(num_epochs):
+        einet.train()
+
+        total_ll = 0.0
+        for i, (x, y) in enumerate(loader):
+            optimizer.zero_grad()
+            x = x.to(device)
+            x = rgb_to_ycocg(x)
+            x = x.permute((0, 2, 3, 1))
+            x = x * 255
+            x = x.reshape(x.shape[0], num_vars, num_dims)
+            ll_sample = einet.forward(x)
+            #ll_sample = EinsumNetwork.log_likelihoods(outputs)
+            log_likelihood = -ll_sample.sum()
+            log_likelihood.backward()
+
+            optimizer.step()
+            total_ll += log_likelihood.detach().item() / (len(loader) * loader.batch_size)
+
+            if i % 20 == 0:
+                print(ll_sample.flatten())
+                logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
+        #total_ll = total_ll / (len(loader) * loader.batch_size)
+        log_likelihoods.append(total_ll)
+        logging.info('Epoch {:03d} \t LL={:03f}'.format(epoch_count, total_ll))
+
+        rt.step()
+    torch.save(einet, os.path.join(chk_path, f'chk_{cluster_count}.pt'))
+    return einet
+
+def eval_einsum(einet, dataset, device_id):
+    if dataset == 'imagenet':
+        transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
+        ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform, split='val')
+    elif dataset == 'imagenet32':
+        transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
+        ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform, split='val')
+    elif dataset == 'celeba':
+        transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
+        ds = CelebA('/storage-01/datasets/', transform=transform, split='valid')
+    elif dataset == 'mnist':
+        dataset = MNIST('/storage-01/datasets/', train=False, transform=ToTensor())
+    loader = DataLoader(ds, 32, num_workers=2, shuffle=False)
+    device = torch.device(f'cuda:{device_id}')
+    einet_lls = []
+    bpds = []
+    with torch.no_grad():
+        for i, (x, y) in enumerate(loader):
+            if i % 50 == 0:
+                print(f"{(i / len(loader) * 100):3f}%")
+            x = x.to(device)
+            x = rgb_to_ycocg(x)
+            x = x.permute((0, 2, 3, 1))
+            x = x * 255
+            x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
+            ll_sample = einet.forward(x)
+            einet_lls.append(ll_sample.detach().cpu().numpy().flatten())
+            nll = -ll_sample.detach().cpu().numpy()
+            shape = list(x.shape[1:])
+            bpd_scores = nll / (np.log(2) * np.prod(shape))
+            bpds.append(bpd_scores.flatten())
+    return np.mean(np.concatenate(einet_lls)), np.mean(np.concatenate(bpds))
 
 if __name__ == '__main__':
     torch.manual_seed(0)
     np.random.seed(0)
-    train(config.num_epochs, config.devices[0], './checkpoints/imagenet/v5/checkpoints_einet/', 0, 'celeba')
+    dataset = 'celeba'
+    einet = train_sgd(config.num_epochs, config.devices[0], './checkpoints/imagenet/v5/checkpoints_einet/', 0, dataset)
+    ll, bpd = eval_einsum(einet, dataset, config.devices[0])
+    print(f"Val-LL: {ll} \t Val-BPD: {bpd}")
     #train_classifier(config.num_epochs, config.devices[0], './checkpoints/imagenet/v5/checkpoints_einet/', 'celeba')
 
 

@@ -29,8 +29,7 @@ def load_dataset(ds_name, split='train'):
         data_shape = (16, 16, 3)
     elif ds_name == 'celeba':
         transform = Compose([ToTensor(), Resize(16, antialias=True), CenterCrop(16)])
-        #dataset = CelebA('/storage-01/datasets/', transform=transform, split=split)
-        dataset = CelebA('~/code/federated-spn/datasets/', transform=transform, split=split)
+        dataset = CelebA('/storage-01/datasets/', transform=transform, split=split)
         data_shape = (16, 16, 3)
     return dataset, data_shape
 
@@ -44,7 +43,7 @@ def train(ds_name, num_epochs):
     #arch = RAT_SPN(np.prod(list(shape)), 256, 2, 6, input_node_type=juice_dists.Categorical, input_node_params={'num_cats': 256})
     #input_dist = juice_dists.Gaussian(0.0, 1.0, 0.1)
     input_dist = juice_dists.Categorical(256)
-    arch = PD(shape, 128, input_dist=input_dist, split_intervals=2)
+    arch = PD(shape, 256, input_dist=input_dist, split_intervals=2)
     print(arch)
     model = juice.compile(arch)
     torch.cuda.set_device(device)
@@ -58,7 +57,6 @@ def train(ds_name, num_epochs):
             x = x.to(device)
             x *= 256
             x = x.reshape(x.shape[0], -1).to(torch.int32)
-            #x /= 255.
 
             # This is equivalent to zeroing out the parameter gradients of a neural network
             model.init_param_flows(flows_memory = 0.0)
@@ -68,12 +66,13 @@ def train(ds_name, num_epochs):
             lls.mean().backward()
             total_ll += lls.sum().detach().cpu() / (len(loader) * loader.batch_size)
             # Mini-batch EM
-            model.mini_batch_em(step_size = 1e-2, pseudocount = 0.001)
+            model.mini_batch_em(step_size = 0.02, pseudocount = 0.001)
 
             if i % 20 == 0:
                 print(f"Epoch {e+1}/{num_epochs}: \t Iter: {i}/{len(loader)}: \t LL: {total_ll}")
         
         print(f"Epoch {e+1}/{num_epochs} \t LL: {total_ll}")
+        rt.step()
     
     return model, device
 
@@ -90,13 +89,13 @@ def evaluate(model, dataset, device):
         x = x.to(device)
         
         lls = model(x)
-        lls_collect.append(lls.detach().cpu.numpy())
+        lls_collect.append(lls.detach().cpu().numpy())
         total_ll += lls.sum().detach().cpu()
 
     return np.concatenate(lls_collect), total_ll / (len(loader) * loader.batch_size)
 
 
-model, device = train('celeba', 5)
+model, device = train('celeba', 10)
 test_set, shape = load_dataset('celeba', 'valid')
 lls, ll = evaluate(model, test_set, device)
 bpd = bits_per_dim(-lls, np.prod(shape))

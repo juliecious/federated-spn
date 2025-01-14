@@ -21,7 +21,7 @@ log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
 format=log_format, datefmt='%m/%d %I:%M:%S %p')
 
-def init_spn(device, num_vars, num_dims, num_classes=1):
+def init_spn(device, num_vars, num_dims, use_em=True, num_classes=1):
     """
         Build a SPN (implemented as an einsum network). The structure is either
         the same as proposed in https://arxiv.org/pdf/1202.3732.pdf (referred to as
@@ -52,7 +52,8 @@ def init_spn(device, num_vars, num_dims, num_classes=1):
             exponential_family=config.exponential_family,
             exponential_family_args=config.exponential_family_args,
             online_em_frequency=config.online_em_frequency,
-            online_em_stepsize=config.online_em_stepsize)
+            online_em_stepsize=config.online_em_stepsize,
+            use_em=use_em)
 
     einet = EinsumNetwork.EinsumNetwork(graph, args)
     einet.initialize()
@@ -169,21 +170,17 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imag
     logging.info('Starting Training...')
     log_likelihoods = []
     device = torch.device(f'cuda:{device_id}')
+    num_vars = config.num_vars
+    num_dims = config.num_dims
     if dataset == 'imagenet':
-        transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width), antialias=True), CenterCrop(112)])
         ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
-        num_vars = 112*112
-        num_dims = 3
     elif dataset == 'imagenet32':
-        transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width), antialias=True), CenterCrop(32)])
         ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
-        num_vars = 32*32
-        num_dims = 3
     elif dataset == 'celeba':
-        transform = Compose([ToTensor(), Resize(64, antialias=True), CenterCrop(64)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = CelebA('/storage-01/datasets/', transform=transform)
-        num_vars = 64*64
-        num_dims = 3
     subset = Subset(ds, img_ids)
     loader = DataLoader(subset, batch_size=config.batch_size, num_workers=2)
     einet = init_spn(device, num_vars, num_dims)
@@ -193,6 +190,7 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imag
         total_ll = 0.0
         for i, (x, y) in enumerate(loader):
             x = x.to(device)
+            x *= 255
             x = x.permute((0, 2, 3, 1))
             x = x.reshape(x.shape[0], num_vars, num_dims)
             ll_sample = einet.forward(x)
@@ -201,11 +199,11 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imag
             log_likelihood.backward()
 
             einet.em_process_batch()
-            total_ll += log_likelihood.detach().item()
+            total_ll += log_likelihood.detach().item() / (len(loader) * loader.batch_size)
 
-            #if i % 20 == 0:
-                #logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
-        total_ll = total_ll / (len(loader) * loader.batch_size)
+            if i % 20 == 0:
+                print(ll_sample.flatten())
+                logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
         log_likelihoods.append(total_ll)
         logging.info('Epoch {:03d} \t LL={:03f}'.format(epoch_count, total_ll))
 
@@ -243,7 +241,7 @@ def train_mixture(clusters, dataset='imagenet', task='density_estimation'):
 RAND_CLUSTERS = False
 
 #clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch_16.npy')
-clusters = np.load('/storage-01/ml-jseng/celeba-clusters/vit_clusters_2.npy')
+clusters = np.load('/storage-01/ml-jseng/celeba-clusters/vit_clusters_16_centers.npy')
 print(clusters.shape)
 
 if RAND_CLUSTERS:
@@ -256,7 +254,7 @@ if RAND_CLUSTERS:
 if __name__ == '__main__':
     torch.manual_seed(0)
     np.random.seed(0)
-    train_mixture(clusters, 'celeba', task='classification')
+    train_mixture(clusters, 'celeba', task='density_estimation')
 
 
 #weights = np.array(cluster_sizes) / np.sum(cluster_sizes)

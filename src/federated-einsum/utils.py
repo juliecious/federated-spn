@@ -151,3 +151,34 @@ def softmax_temp(x, t=1.0, dim=1):
     ex = torch.exp(x / t)
     s = torch.sum(ex, dim=dim).unsqueeze(1)
     return ex / s
+
+import torch
+
+def rgb_to_ycocg(rgb: torch.Tensor) -> torch.Tensor:
+    """
+    Convert an RGB image to YCoCg color space.
+    Args:
+        rgb (torch.Tensor): Input tensor of shape (N, C, H, W) with RGB channels.
+    Returns:
+        torch.Tensor: Tensor of shape (N, C, H, W) with YCoCg channels.
+    """
+    # Ensure input is in the expected range [0, 1] or [0, 255]
+    if rgb.max() > 1:
+        rgb = rgb / 255.0
+
+
+    # Conversion matrix for RGB to YCoCg
+    transformation_matrix = torch.tensor([
+        [0.25,  0.5,  0.25],   # Y
+        [0.5,   0.0, -0.5],    # Co
+        [-0.25, 0.5, -0.25]    # Cg
+    ], dtype=rgb.dtype, device=rgb.device)
+
+    # Reshape RGB channels to apply the matrix
+    rgb = rgb.permute(0, 2, 3, 1)  # Change to (N, H, W, C)
+    ycocg = torch.matmul(rgb, transformation_matrix.T)
+    ycocg = ycocg.permute(0, 3, 1, 2)  # Change back to (N, C, H, W)
+    # make all dimensions between 0 and 1
+    ycocg[:, [1, 2], :, :] += 0.5
+
+    return ycocg
