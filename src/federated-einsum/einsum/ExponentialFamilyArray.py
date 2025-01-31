@@ -119,7 +119,7 @@ class ExponentialFamilyArray(torch.nn.Module):
         """
         raise NotImplementedError
 
-    def expectation_to_natural(self, phi):
+    def expectation_to_natural(self, phi, as_tuple=False):
         """
         Conversion from expectations parameters phi to natural parameters theta, for the implemented exponential
         family.
@@ -282,6 +282,41 @@ class ExponentialFamilyArray(torch.nn.Module):
 
         return output
 
+    def forward_discretized(self, x):
+        """
+            Compute log-likelihood of a discretized continuous RV (e.g. if we model images using Gaussians).
+
+            NOTE: Currently only supports Gaussians
+        """
+
+        if self._use_em:
+            with torch.no_grad():
+                theta1, theta2 = self.expectation_to_natural(self.params, as_tuple=True)
+        else:
+            phi = self.reparam(self.params)
+            theta1, theta2 = self.expectation_to_natural(phi, as_tuple=True)
+
+        mu = -theta1 / (2 * theta2)
+        sigma2 = -1 / (2 * theta2)
+        sigma = torch.sqrt(sigma2)
+
+        dim = self.num_dims * self.num_var
+
+        disc_interval = 1/255
+        a = (x + disc_interval).reshape(-1, dim).unsqueeze(1)
+        b = (x - disc_interval).reshape(-1, dim).unsqueeze(1)
+
+        dist = torch.distributions.Normal(mu.reshape(-1, dim), sigma.reshape(-1, dim))
+
+        log_Phi_a = torch.log(dist.cdf(a))
+        log_Phi_b = torch.log(dist.cdf(b))
+
+        log_prob = torch.log(torch.exp(log_Phi_a) - torch.exp(log_Phi_b) + 1e-12)
+        
+        log_prob = log_prob.reshape(-1, self.num_var, *self.array_shape)
+        self.ll = log_prob
+        return log_prob
+
     def sample(self, num_samples=1, **kwargs):
         if self._use_em:
             params = self.params
@@ -422,11 +457,14 @@ class NormalArray(ExponentialFamilyArray):
             raise AssertionError("Input must be 2 or 3 dimensional tensor.")
         return stats
 
-    def expectation_to_natural(self, phi):
+    def expectation_to_natural(self, phi, as_tuple=False):
         var = phi[..., self.num_dims:] - phi[..., 0:self.num_dims] ** 2
         theta1 = phi[..., 0:self.num_dims] / var
         theta2 = - 1. / (2. * var)
-        return torch.cat((theta1, theta2), -1)
+        if as_tuple:
+            return theta1, theta2
+        else:
+            return torch.cat((theta1, theta2), -1)
 
     def log_normalizer(self, theta):
         log_normalizer = -theta[..., 0:self.num_dims] ** 2 / (4 * theta[..., self.num_dims:]) - 0.5 * torch.log(-2. * theta[..., self.num_dims:])
@@ -479,7 +517,7 @@ class BinomialArray(ExponentialFamilyArray):
             raise AssertionError("Input must be 2 or 3 dimensional tensor.")
         return stats
 
-    def expectation_to_natural(self, phi):
+    def expectation_to_natural(self, phi, as_tuple=False):
         theta = torch.clamp(phi / self.N, 1e-6, 1. - 1e-6)
         theta = torch.log(theta) - torch.log(1. - theta)
         return theta
@@ -548,7 +586,7 @@ class CategoricalArray(ExponentialFamilyArray):
             raise AssertionError("Input must be 2 or 3 dimensional tensor.")
         return stats
 
-    def expectation_to_natural(self, phi):
+    def expectation_to_natural(self, phi, as_tuple=False):
         theta = torch.clamp(phi, 1e-12, 1.)
         theta = theta.reshape(self.num_var, *self.array_shape, self.num_dims, self.K)
         theta /= theta.sum(-1, keepdim=True)

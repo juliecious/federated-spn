@@ -90,6 +90,28 @@ class FactorizedLeafLayer(Layer):
         """
         self.prob = torch.einsum('bxir,xro->bio', self.ef_array(x), self.scope_tensor)
 
+    def forward_discretized(self, x=None):
+        """
+        Compute the factorized leaf densities. We are doing the computation in the log-domain, so this is actually
+        computing sums over densities.
+
+        We first pass the data x into self.ef_array, which computes a tensor of shape
+        (batch_size, num_var, num_dist, num_replica). This is best interpreted as vectors of length num_dist, for each
+        sample in the batch and each RV. Since some leaves have overlapping scope, we need to compute "enough" leaves,
+        hence the num_replica dimension. The assignment of these log-densities to leaves is represented with
+        self.scope_tensor.
+        In the end, the factorization (sum in log-domain) is realized with a single einsum.
+
+        :param x: input data (Tensor).
+                  If self.num_dims == 1, this can be either of shape (batch_size, self.num_var, 1) or
+                  (batch_size, self.num_var).
+                  If self.num_dims > 1, this must be of shape (batch_size, self.num_var, self.num_dims).
+        :return: log-density vectors of leaves
+                 Will be of shape (batch_size, num_dist, len(self.nodes))
+                 Note: num_dist is K in the paper, len(self.nodes) is the number of PC leaves
+        """
+        self.prob = torch.einsum('bxir,xro->bio', self.ef_array.forward_discretized(x), self.scope_tensor)
+
     def backtrack(self, dist_idx, node_idx, mode='sample', **kwargs):
         """
         Backtrackng mechanism for EiNets.

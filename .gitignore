@@ -4,6 +4,6 @@ indices.json
 model.pt
 models/
 samples/
-checkpoints/
+checkpoints*/
 precomputed/
 datasets/

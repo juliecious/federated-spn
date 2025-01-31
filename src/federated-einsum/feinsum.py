@@ -3,19 +3,18 @@ import torch.nn.grad
 from torchvision.datasets import ImageNet, CelebA
 from torchvision.transforms import Compose, CenterCrop, Resize, ToTensor
 from torch.utils.data import Subset, DataLoader
-from einsum import EinsumNetwork, Graph, EinetMixture
+from einsum import EinsumNetwork, Graph
 import config
 import torch
 import os
 import logging
 import sys
-from utils import save_image_stack
-from sklearn.cluster import KMeans
 from multiprocessing import Process
 import pickle
 from rtpt import RTPT
 import pandas as pd
 from pathlib import Path
+from utils import rgb_to_ycocg
 
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
@@ -173,10 +172,10 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imag
     num_vars = config.num_vars
     num_dims = config.num_dims
     if dataset == 'imagenet':
-        transform = Compose([ToTensor(), Resize((config.height, config.width), antialias=True), CenterCrop(112)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
     elif dataset == 'imagenet32':
-        transform = Compose([ToTensor(), Resize((config.height, config.width), antialias=True), CenterCrop(32)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform)
     elif dataset == 'celeba':
         transform = Compose([ToTensor(), Resize((config.height, config.width))])
@@ -184,14 +183,25 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imag
     subset = Subset(ds, img_ids)
     loader = DataLoader(subset, batch_size=config.batch_size, num_workers=2)
     einet = init_spn(device, num_vars, num_dims)
+    transformation_matrix = torch.tensor([
+                [0.25,  0.5,  0.25],   # Y
+                [0.5,   0.0, -0.5],    # Co
+                [-0.25, 0.5, -0.25]    # Cg
+            ], device=device)
     for epoch_count in range(num_epochs):
         einet.train()
 
         total_ll = 0.0
         for i, (x, y) in enumerate(loader):
             x = x.to(device)
-            x *= 255
-            x = x.permute((0, 2, 3, 1))
+            # Reshape RGB channels to apply the matrix
+            x = x.permute(0, 2, 3, 1)  # Change to (N, H, W, C)
+            ycocg = torch.matmul(x, transformation_matrix.T)
+            ycocg = ycocg.permute(0, 3, 1, 2)  # Change back to (N, C, H, W)
+            # make all dimensions between 0 and 1
+            ycocg[:, [1, 2], :, :] += 0.5
+            x = ycocg
+            #x = x * 255
             x = x.reshape(x.shape[0], num_vars, num_dims)
             ll_sample = einet.forward(x)
             #ll_sample = EinsumNetwork.log_likelihoods(outputs)
@@ -202,7 +212,6 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imag
             total_ll += log_likelihood.detach().item() / (len(loader) * loader.batch_size)
 
             if i % 20 == 0:
-                print(ll_sample.flatten())
                 logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
         log_likelihoods.append(total_ll)
         logging.info('Epoch {:03d} \t LL={:03f}'.format(epoch_count, total_ll))
@@ -224,13 +233,15 @@ def train_mixture(clusters, dataset='imagenet', task='density_estimation'):
         for i, rc in enumerate(cluster_batch):
             idx = i % len(config.devices)
             device_id = config.devices[idx]
-            img_ids = np.argwhere(clusters == rc).flatten()
+            #img_ids = np.argwhere(clusters == rc).flatten()
+            img_ids = np.random.randint(0, len(clusters), size=int(len(clusters) / len(unique_clusters))).flatten()
 
             print(f"Cluster-size={len(img_ids)}")
+            checkpoint_dir = './checkpoints/imagenet/v1/checkpoints_ceinet_2clusters/'
             if task == 'density_estimation':
-                p = Process(target=train, args=(img_ids, config.num_epochs, device_id, './checkpoints/imagenet/v1/checkpoints_ceinet_100clusters_large/', rc, dataset))
+                p = Process(target=train, args=(img_ids, config.num_epochs, device_id, checkpoint_dir, rc, dataset))
             else:
-                p = Process(target=train_classifier, args=(img_ids, config.num_epochs, device_id, './checkpoints/imagenet/cv1/checkpoints_feinet_clsf/', rc, dataset))
+                p = Process(target=train_classifier, args=(img_ids, config.num_epochs, device_id, checkpoint_dir, rc, dataset))
             p.start()
             processes.append(p)
     
@@ -241,7 +252,7 @@ def train_mixture(clusters, dataset='imagenet', task='density_estimation'):
 RAND_CLUSTERS = False
 
 #clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_cluster_minibatch_16.npy')
-clusters = np.load('/storage-01/ml-jseng/celeba-clusters/vit_clusters_16_centers.npy')
+clusters = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_clusters_2_centers.npy')
 print(clusters.shape)
 
 if RAND_CLUSTERS:
@@ -254,7 +265,7 @@ if RAND_CLUSTERS:
 if __name__ == '__main__':
     torch.manual_seed(0)
     np.random.seed(0)
-    train_mixture(clusters, 'celeba', task='density_estimation')
+    train_mixture(clusters, 'imagenet', task='density_estimation')
 
 
 #weights = np.array(cluster_sizes) / np.sum(cluster_sizes)

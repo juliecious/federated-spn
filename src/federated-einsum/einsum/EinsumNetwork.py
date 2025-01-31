@@ -150,6 +150,15 @@ class EinsumNetwork(torch.nn.Module):
             einsum_layer()
         return self.einet_layers[-1].prob[:, :, 0]
 
+    def forward_discretized(self, x):
+        """Evaluate the EinsumNetwork feed forward and discretize continuous distributions."""
+
+        input_layer = self.einet_layers[0]
+        input_layer.forward_discretized(x=x)
+        for i, einsum_layer in enumerate(self.einet_layers[1:]):
+            einsum_layer()
+        return self.einet_layers[-1].prob[:, :, 0]
+
     def backtrack(self, num_samples=1, class_idx=0, x=None, mode='sampling', **kwargs):
         """
         Perform backtracking; for sampling or MPE approximation.

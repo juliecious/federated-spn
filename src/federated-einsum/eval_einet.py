@@ -17,21 +17,35 @@ def eval_einsum(model_dir, model_id, dataset, device_id):
         transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
         ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform, split='val')
     elif dataset == 'celeba':
-        transform = Compose([ToTensor(), Resize(64, antialias=True), CenterCrop(64)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = CelebA('/storage-01/datasets/', transform=transform, split='test')
     loader = DataLoader(ds, 32, num_workers=2, shuffle=False)
     model_file = f'chk_{model_id}.pt'
     device = torch.device(f'cuda:{device_id}')
     einet = torch.load(model_dir + model_file).to(device)
     einet_lls = []
-    for i, (x, y) in enumerate(loader):
-        if i % 50 == 0:
-            print(f"{(i / len(loader) * 100):3f}%")
-        x = x.to(device)
-        x = x.permute((0, 2, 3, 1))
-        x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
-        ll_sample = einet.forward(x)
-        einet_lls.append(ll_sample.detach().cpu().numpy().flatten())
+    transformation_matrix = torch.tensor([
+                [0.25,  0.5,  0.25],   # Y
+                [0.5,   0.0, -0.5],    # Co
+                [-0.25, 0.5, -0.25]    # Cg
+            ], device=device)
+    with torch.no_grad():
+        for i, (x, y) in enumerate(loader):
+            if i % 50 == 0:
+                print(f"{(i / len(loader) * 100):3f}%")
+            x = x.to(device)
+            # Reshape RGB channels to apply the matrix
+            x = x.permute(0, 2, 3, 1)  # Change to (N, H, W, C)
+            ycocg = torch.matmul(x, transformation_matrix.T)
+            ycocg = ycocg.permute(0, 3, 1, 2)  # Change back to (N, C, H, W)
+            # make all dimensions between 0 and 1
+            ycocg[:, [1, 2], :, :] += 0.5
+            x = ycocg
+            #x = x * 255
+            x = x.reshape(x.shape[0], config.num_vars, config.num_dims)
+            #ll_sample = einet.forward(x)
+            ll_sample = einet.forward_discretized(x)
+            einet_lls.append(ll_sample.detach().cpu().numpy().flatten())
     return np.concatenate(einet_lls)
     #samples = einet.sample(9).reshape(-1, config.height, config.width, 3)
     #save_image_stack(samples.cpu(), 3, 3, os.path.join(sample_dir, 'samples.png'))
@@ -60,18 +74,18 @@ if __name__ == '__main__':
         print(einet_lls.mean())
         if args.cluster_file is not None:
             w = len(clusters[clusters == i]) / len(clusters)
-            weighted_lls = einet_lls - np.log(w)
+            weighted_lls = einet_lls + np.log(w)
+            print(w)
+            print(einet_lls)
+            print(weighted_lls)
             lls.append(weighted_lls)
         else:
             lls.append(einet_lls)
 
     if args.cluster_file is not None:
-        print(np.array(lls).shape)
         lls = torch.from_numpy(np.array(lls).T)
-        lls = torch.logsumexp(lls, dim=1) 
+        lls = torch.logsumexp(lls, dim=1)
         torch.save(lls, './lls_im')
-        print(lls.shape)
-        print(lls.mean())
+        print(lls.mean() / (config.num_vars * config.num_dims))
     else:
-        print(lls[0].shape)
-        print(lls[0].mean())
+        print(lls[0].mean() / (config.num_vars * config.num_dims))
