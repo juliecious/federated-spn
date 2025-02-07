@@ -225,10 +225,10 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imag
 def train_mixture(clusters, dataset='imagenet', task='density_estimation'):
     unique_clusters = np.unique(clusters)
     num_slices = int(np.ceil(len(unique_clusters) / config.num_processes))
-    unique_clusters = np.array_split(unique_clusters, num_slices)
+    batched_unique_clusters = np.array_split(unique_clusters, num_slices)
     rt = RTPT('JS', 'FedEinsum', len(unique_clusters))
     rt.start()
-    for cluster_batch in unique_clusters:
+    for cluster_batch in batched_unique_clusters:
         processes = []
         for i, rc in enumerate(cluster_batch):
             idx = i % len(config.devices)
@@ -237,7 +237,7 @@ def train_mixture(clusters, dataset='imagenet', task='density_estimation'):
             img_ids = np.random.randint(0, len(clusters), size=int(len(clusters) / len(unique_clusters))).flatten()
 
             print(f"Cluster-size={len(img_ids)}")
-            checkpoint_dir = './checkpoints/imagenet/v1/checkpoints_ceinet_2clusters/'
+            checkpoint_dir = './checkpoints/imagenet/v5/checkpoints_ceinet_2clusters/'
             if task == 'density_estimation':
                 p = Process(target=train, args=(img_ids, config.num_epochs, device_id, checkpoint_dir, rc, dataset))
             else:
@@ -263,8 +263,8 @@ if RAND_CLUSTERS:
 # train einets in parallel. Start num_slices processes in parallel, wait
 # until they finished and start next batch
 if __name__ == '__main__':
-    torch.manual_seed(0)
-    np.random.seed(0)
+    torch.manual_seed(2)
+    np.random.seed(2)
     train_mixture(clusters, 'imagenet', task='density_estimation')
 
 

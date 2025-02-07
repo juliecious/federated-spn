@@ -11,18 +11,18 @@ import os
 
 def eval_einsum(model_dir, model_id, dataset, device_id):
     if dataset == 'imagenet':
-        transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform, split='val')
     elif dataset == 'imagenet32':
-        transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform, split='val')
     elif dataset == 'celeba':
         transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = CelebA('/storage-01/datasets/', transform=transform, split='test')
-    loader = DataLoader(ds, 32, num_workers=2, shuffle=False)
+    loader = DataLoader(ds, 32, num_workers=4, shuffle=False)
     model_file = f'chk_{model_id}.pt'
     device = torch.device(f'cuda:{device_id}')
-    einet = torch.load(model_dir + model_file).to(device)
+    einet = torch.load(model_dir + model_file, map_location=device)
     einet_lls = []
     transformation_matrix = torch.tensor([
                 [0.25,  0.5,  0.25],   # Y
@@ -33,7 +33,7 @@ def eval_einsum(model_dir, model_id, dataset, device_id):
         for i, (x, y) in enumerate(loader):
             if i % 50 == 0:
                 print(f"{(i / len(loader) * 100):3f}%")
-            x = x.to(device)
+            x = x.to(device, non_blocking=True)
             # Reshape RGB channels to apply the matrix
             x = x.permute(0, 2, 3, 1)  # Change to (N, H, W, C)
             ycocg = torch.matmul(x, transformation_matrix.T)

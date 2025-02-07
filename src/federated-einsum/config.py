@@ -40,7 +40,7 @@ patch_size = (height, width)
 depth = 4
 num_repetitions = 4
 
-num_epochs = 5
+num_epochs = 1
 batch_size = 64
 online_em_frequency = 10
 online_em_stepsize = 0.25
@@ -56,5 +56,5 @@ reuse_trained = False
 port = '12005'
 
 # Devices
-devices = [0, 1, 2, 7]
+devices = [0]
 num_processes = 4

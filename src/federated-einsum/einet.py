@@ -241,10 +241,10 @@ def eval_einsum(einet, dataset, device_id):
     num_dims = config.num_dims
     device = torch.device(f'cuda:{device_id}')
     if dataset == 'imagenet':
-        transform = Compose([ToTensor(), Resize(112, antialias=True), CenterCrop(112)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform, split='val')
     elif dataset == 'imagenet32':
-        transform = Compose([ToTensor(), Resize(32, antialias=True), CenterCrop(32)])
+        transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = ImageNet('/storage-01/datasets/imagenet/', transform=transform, split='val')
     elif dataset == 'celeba':
         transform = Compose([ToTensor(), Resize((config.height, config.width))])
@@ -286,10 +286,10 @@ def eval_einsum(einet, dataset, device_id):
 if __name__ == '__main__':
     torch.manual_seed(0)
     np.random.seed(0)
-    dataset = 'celeba'
-    einet = train(config.num_epochs, config.devices[0], './checkpoints/imagenet/v5/checkpoints_einet/', 0, dataset)
+    dataset = 'imagenet32'
+    einet = train(config.num_epochs, config.devices[0], './checkpoints/imagenet/v1/checkpoints_einet/', 0, dataset)
     ll, nats = eval_einsum(einet, dataset, config.devices[0])
-    print(f"Val-LL: {ll} \t Val-BPD: {nats}")
+    print(f"Val-LL: {ll} \t Val-nats: {nats}")
     #train_classifier(config.num_epochs, config.devices[0], './checkpoints/imagenet/v5/checkpoints_einet/', 'celeba')
 
 
