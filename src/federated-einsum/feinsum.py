@@ -2,7 +2,7 @@ import numpy as np
 import torch.nn.grad
 from torchvision.datasets import ImageNet, CelebA
 from torchvision.transforms import Compose, CenterCrop, Resize, ToTensor
-from torch.utils.data import Subset, DataLoader
+from torch.utils.data import Subset, DataLoader, TensorDataset
 from einsum import EinsumNetwork, Graph
 import config
 import torch
@@ -180,8 +180,9 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imag
     elif dataset == 'celeba':
         transform = Compose([ToTensor(), Resize((config.height, config.width))])
         ds = CelebA('/storage-01/datasets/', transform=transform)
+    
     subset = Subset(ds, img_ids)
-    loader = DataLoader(subset, batch_size=config.batch_size, num_workers=2)
+    loader = DataLoader(subset, batch_size=config.batch_size, num_workers=2, persistent_workers=True, prefetch_factor=4)
     einet = init_spn(device, num_vars, num_dims)
     transformation_matrix = torch.tensor([
                 [0.25,  0.5,  0.25],   # Y
@@ -209,7 +210,7 @@ def train(img_ids, num_epochs, device_id, chk_path, cluster_count, dataset='imag
             log_likelihood.backward()
 
             einet.em_process_batch()
-            total_ll += log_likelihood.detach().item() / (len(loader) * loader.batch_size)
+            total_ll += log_likelihood.detach().cpu() / (len(loader) * loader.batch_size)
 
             if i % 20 == 0:
                 logging.info('Epoch {:03d} \t Step {:03d} \t LL {:03f}'.format(epoch_count, i, total_ll))
@@ -259,12 +260,12 @@ if RAND_CLUSTERS:
     # If we shuffle cluster assignments randomly, this is the same as distributing the images randomly.
     clusters = np.random.permutation(clusters)
 
-# encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')
+# encodings = np.load('/storage-01/ml-jseng/imagenet-clusters/vit_enc.npy')2
 # train einets in parallel. Start num_slices processes in parallel, wait
 # until they finished and start next batch
 if __name__ == '__main__':
-    torch.manual_seed(2)
-    np.random.seed(2)
+    torch.manual_seed(0)
+    np.random.seed(0)
     train_mixture(clusters, 'imagenet', task='density_estimation')
 
 

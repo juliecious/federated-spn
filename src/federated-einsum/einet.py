@@ -286,8 +286,8 @@ def eval_einsum(einet, dataset, device_id):
 if __name__ == '__main__':
     torch.manual_seed(0)
     np.random.seed(0)
-    dataset = 'imagenet32'
-    einet = train(config.num_epochs, config.devices[0], './checkpoints/imagenet/v1/checkpoints_einet/', 0, dataset)
+    dataset = 'celeba'
+    einet = train(1, 2, './checkpoints/celeba/v1/checkpoints_einet/', 0, dataset)
     ll, nats = eval_einsum(einet, dataset, config.devices[0])
     print(f"Val-LL: {ll} \t Val-nats: {nats}")
     #train_classifier(config.num_epochs, config.devices[0], './checkpoints/imagenet/v5/checkpoints_einet/', 'celeba')
